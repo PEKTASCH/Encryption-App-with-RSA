@@ -1,0 +1,245 @@
+import tkinter as tk
+from tkinter import filedialog, messagebox
+from sympy import isprime, mod_inverse
+import random
+import hashlib
+
+# RSA algoritması için gerekli fonksiyonlar
+def generate_large_prime(keysize=1024):
+    while True:
+        num = random.getrandbits(keysize)
+        if isprime(num):
+            return num
+
+def generate_keypair(keysize=1024):
+    p = generate_large_prime(keysize)
+    q = generate_large_prime(keysize)
+    n = p * q
+    phi = (p - 1) * (q - 1)
+    e = 7
+    d = mod_inverse(e, phi)
+    return ((e, n), (d, n))
+
+def encrypt(plain_text, public_key):
+    e, n = public_key
+    encrypted_text = [pow(ord(char), e, n) for char in plain_text]
+    return encrypted_text
+
+def decrypt(encrypted_text, private_key):
+    d, n = private_key
+    decrypted_text = ''.join([chr(pow(char, d, n)) for char in encrypted_text])
+    return decrypted_text
+
+def sign_message(message, private_key):
+    d, n = private_key
+    message_hash = hashlib.sha256(message.encode()).digest()
+    signature = pow(int.from_bytes(message_hash, 'big'), d, n)
+    return signature
+
+def verify_signature(message, signature, public_key):
+    e, n = public_key
+    message_hash = hashlib.sha256(message.encode()).digest()
+    hash_from_signature = pow(signature, e, n)
+    return int.from_bytes(message_hash, 'big') == hash_from_signature
+
+class RSAApp:
+    def __init__(self, root):
+        self.root = root
+        self.root.title("RSA Dijital İmza Uygulaması")
+
+        self.public_key = None
+        self.private_key = None
+
+        # Scrollbar
+        self.canvas = tk.Canvas(root)
+        self.scroll_y = tk.Scrollbar(root, orient="vertical", command=self.canvas.yview)
+        self.scroll_frame = tk.Frame(self.canvas)
+
+        self.scroll_frame.bind(
+            "<Configure>",
+            lambda e: self.canvas.configure(
+                scrollregion=self.canvas.bbox("all")
+            )
+        )
+
+        self.canvas.create_window((0, 0), window=self.scroll_frame, anchor='nw')
+        self.canvas.configure(yscrollcommand=self.scroll_y.set)
+
+        self.canvas.pack(side="left", fill="both", expand=True)
+        self.scroll_y.pack(side="right", fill="y")
+
+        # Anahtar boyutunu girdiği bölüm
+        self.keysize_label = tk.Label(self.scroll_frame, text="Anahtar Boyutu:")
+        self.keysize_label.pack()
+        self.keysize_entry = tk.Entry(self.scroll_frame)
+        self.keysize_entry.pack()
+        self.keysize_entry.insert(0, "1024")  # Varsayılan değer
+
+        # Anahtar üretme bölümü
+        self.key_frame = tk.Frame(self.scroll_frame)
+        self.key_frame.pack(pady=10)
+        
+        self.generate_key_button = tk.Button(self.key_frame, text="Anahtar Çifti Oluştur", command=self.generate_keys)
+        self.generate_key_button.pack()
+
+        # Anahtar gösterimi için metin kutuları
+        self.public_key_label = tk.Label(self.scroll_frame, text="Açık Anahtar")
+        self.public_key_label.pack()
+        self.public_key_text = tk.Text(self.scroll_frame, height=4, width=50)
+        self.public_key_text.pack()
+        self.public_key_text.config(state=tk.DISABLED)
+
+        self.private_key_label = tk.Label(self.scroll_frame, text="Özel Anahtar")
+        self.private_key_label.pack()
+        self.private_key_text = tk.Text(self.scroll_frame, height=4, width=50)
+        self.private_key_text.pack()
+        self.private_key_text.config(state=tk.DISABLED)
+
+        # İmzalama ve doğrulama için metin girişleri ve butonlar
+        self.sign_frame = tk.Frame(self.scroll_frame)
+        self.sign_frame.pack(pady=10)
+
+        self.sign_text_label =  tk.Label(self.sign_frame, text="İmzalanacak Metin:")
+        self.sign_text_label.pack(side=tk.LEFT)
+        self.sign_text_entry = tk.Entry(self.sign_frame, width=50)
+        self.sign_text_entry.pack(side=tk.LEFT)
+
+        self.sign_button = tk.Button(self.scroll_frame, text="Metni İmzala", command=self.sign_text)
+        self.sign_button.pack(pady=5)
+
+        self.signature_text_label = tk.Label(self.scroll_frame, text="İmza")
+        self.signature_text_label.pack()
+        self.signature_text = tk.Text(self.scroll_frame, height=4, width=50)
+        self.signature_text.pack()
+        self.signature_text.config(state=tk.DISABLED)
+
+        self.verify_frame = tk.Frame(self.scroll_frame)
+        self.verify_frame.pack(pady=10)
+
+        self.verify_text_label = tk.Label(self.verify_frame, text="Doğrulanacak Metin:")
+        self.verify_text_label.pack(side=tk.LEFT)
+        self.verify_text_entry = tk.Entry(self.verify_frame, width=50)
+        self.verify_text_entry.pack(side=tk.LEFT)
+
+        self.verify_signature_label = tk.Label(self.scroll_frame, text="İmza:")
+        self.verify_signature_label.pack()
+        self.verify_signature_entry = tk.Entry(self.scroll_frame, width=50)
+        self.verify_signature_entry.pack()
+
+        self.verify_button = tk.Button(self.scroll_frame, text="İmzayı Doğrula", command=self.verify_text)
+        self.verify_button.pack(pady=5)
+
+        # Dosya imzalama ve doğrulama için butonlar
+        self.file_sign_frame = tk.Frame(self.scroll_frame)
+        self.file_sign_frame.pack(pady=10)
+
+        self.file_sign_button = tk.Button(self.file_sign_frame, text="Dosyayı İmzala", command=self.sign_file)
+        self.file_sign_button.pack(side=tk.LEFT, padx=5)
+
+        self.file_verify_button = tk.Button(self.file_sign_frame, text="Dosyanın İmzasını Doğrula", command=self.verify_file)
+        self.file_verify_button.pack(side=tk.LEFT, padx=5)
+
+    def generate_keys(self):
+        try:
+            keysize = int(self.keysize_entry.get())
+            self.public_key, self.private_key = generate_keypair(keysize)
+            self.public_key_text.config(state=tk.NORMAL)
+            self.public_key_text.delete("1.0", tk.END)
+            self.public_key_text.insert(tk.END, f"{self.public_key[0]}, {self.public_key[1]}\n")
+            self.public_key_text.config(state=tk.DISABLED)
+
+            self.private_key_text.config(state=tk.NORMAL)
+            self.private_key_text.delete("1.0", tk.END)
+            self.private_key_text.insert(tk.END, f"{self.private_key[0]}, {self.private_key[1]}\n")
+            self.private_key_text.config(state=tk.DISABLED)
+
+            messagebox.showinfo("Anahtar Çifti", "Anahtarlar başarıyla oluşturuldu.")
+        except ValueError:
+            messagebox.showerror("Hata", "Geçerli bir anahtar boyutu girin.")
+
+    def sign_text(self):
+        plain_text = self.sign_text_entry.get()
+        if not plain_text:
+            messagebox.showerror("Hata", "Lütfen imzalanacak metni girin.")
+            return
+        if not self.private_key:
+            messagebox.showerror("Hata", "Lütfen önce anahtar çifti oluşturun.")
+            return
+        try:
+            signature = sign_message(plain_text, self.private_key)
+            self.signature_text.config(state=tk.NORMAL)
+            self.signature_text.delete("1.0", tk.END)
+            self.signature_text.insert(tk.END, str(signature))
+            self.signature_text.config(state=tk.DISABLED)
+            messagebox.showinfo("Başarılı", "Metin başarıyla imzalandı.")
+        except Exception as e:
+            messagebox.showerror("Hata", f"İmzalarken hata oluştu: {str(e)}")
+
+    def verify_text(self):
+        plain_text = self.verify_text_entry.get()
+        if not plain_text:
+            messagebox.showerror("Hata", "Lütfen doğrulanacak metni girin.")
+            return
+        signature_str = self.verify_signature_entry.get()
+        if not signature_str:
+            messagebox.showerror("Hata", "Lütfen imzayı girin.")
+            return
+        public_key_str = self.public_key_text.get("1.0", tk.END).strip()
+        if not public_key_str:
+            messagebox.showerror("Hata", "Lütfen açık anahtarı girin.")
+            return
+        try:
+            signature = int(signature_str)
+            public_key = tuple(map(int, public_key_str.split(',')))
+            is_valid = verify_signature(plain_text, signature, public_key)
+            if is_valid:
+                messagebox.showinfo("Başarılı", "İmza geçerli.")
+            else:
+                messagebox.showerror("Hata", "İmza geçersiz.")
+        except Exception as e:
+            messagebox.showerror("Hata", f"Doğrulama sırasında hata oluştu: {str(e)}")
+
+    def sign_file(self):
+        file_path = filedialog.askopenfilename()
+        if not file_path:
+            return
+        if not self.private_key:
+            messagebox.showerror("Hata", "Lütfen önce anahtar çifti oluşturun.")
+            return
+        try:
+            with open(file_path, 'rb') as file:
+                file_content = file.read()
+                signature = sign_message(file_content, self.private_key)
+            signature_file_path = file_path + ".sig"
+            with open(signature_file_path, 'wb') as sig_file:
+                sig_file.write(signature.to_bytes((signature.bit_length() + 7) // 8, 'big'))
+            messagebox.showinfo("Başarılı", "Dosya başarıyla imzalandı.")
+        except Exception as e:
+            messagebox.showerror("Hata", f"İmzalarken hata oluştu: {str(e)}")
+
+    def verify_file(self):
+        file_path = filedialog.askopenfilename()
+        if not file_path:
+            return
+        signature_file_path = file_path + ".sig"
+        if not self.public_key:
+            messagebox.showerror("Hata", "Lütfen önce açık anahtar girin.")
+            return
+        try:
+            with open(signature_file_path, 'rb') as sig_file:
+                signature = int.from_bytes(sig_file.read(), 'big')
+            with open(file_path, 'rb') as file:
+                file_content = file.read()
+                is_valid = verify_signature(file_content, signature, self.public_key)
+            if is_valid:
+                messagebox.showinfo("Başarılı", "İmza geçerli.")
+            else:
+                messagebox.showerror("Hata", "İmza geçersiz.")
+        except Exception as e:
+            messagebox.showerror("Hata", f"Doğrulama sırasında hata oluştu: {str(e)}")
+
+if __name__ == "__main__":
+    root = tk.Tk()
+    app = RSAApp(root)
+    root.mainloop()
+
